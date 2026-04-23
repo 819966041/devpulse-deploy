@@ -27,3 +27,9 @@ nohup.out
 # 带服务器信息的脚本
 devpulse.ps1
 *.bat
+
+# 外部项目分析文档（本地参考资料）
+doc/
+
+# Claude 项目记忆文件
+.claude/projects/

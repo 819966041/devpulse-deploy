@@ -1,0 +1,6 @@
+node_modules/
+output/
+.sent-flags/
+logs/
+.env
+*.log

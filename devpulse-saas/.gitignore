@@ -1,0 +1,10 @@
+.env
+.env.local
+.env.*.local
+node_modules/
+.next/
+*.db
+*.db-journal
+*.db.bak-*
+*.log
+nohup.out

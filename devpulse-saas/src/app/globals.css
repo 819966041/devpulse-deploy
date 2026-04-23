@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+/* DevPulse AI 品牌变量 */
+:root {
+  --primary: #4F46E5;
+  --primary-light: #6366F1;
+  --secondary: #7C3AED;
+  --accent: #F59E0B;
+  --bg: #F0F2F8;
+  --card-bg: #FFFFFF;
+  --text: #1E1B4B;
+  --text-secondary: #6B7280;
+  --text-muted: #9CA3AF;
+  --border: #E5E7EB;
+  --success: #10B981;
+  --danger: #EF4444;
+}
+
+body {
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* 品牌渐变 */
+.brand-gradient {
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+}
+
+/* 评分徽章 */
+.badge-must-read {
+  background: #FEF3C7;
+  color: #B45309;
+}
+
+.badge-recommended {
+  background: #E0E7FF;
+  color: #4338CA;
+}
+
+.badge-worth {
+  background: #F3F4F6;
+  color: #6B7280;
+}
+
+/* 语言色块 */
+.lang-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
+}

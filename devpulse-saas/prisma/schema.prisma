@@ -1,0 +1,110 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  passwordHash  String?
+  image         String?
+  plan          Plan     @default(FREE)
+  role          Role     @default(USER)
+
+  // Stripe
+  stripeCustomerId String?
+
+  // 用户偏好
+  subscribedCategories String? // JSON: ["AI/大模型","编程工具"]
+  emailFrequency       EmailFrequency @default(DAILY)
+
+  // API
+  apiKeys       ApiKey[]
+
+  // 时间
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // 关联
+  payments     Payment[]
+  subscriptions EmailSubscription[]
+}
+
+model ApiKey {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String   @default("Default")
+  keyHash    String   @unique
+  keyPrefix  String   // 前8位用于展示: dp_live_xxxxx...
+  lastUsedAt DateTime?
+  createdAt  DateTime @default(now())
+}
+
+model Payment {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount          Int      // 金额（分）
+  currency        String   @default("cny")
+  plan            Plan
+  period          String?  // monthly / yearly / lifetime
+  stripeSessionId String?  @unique
+  wechatTradeNo   String?
+  status          PaymentStatus @default(PENDING)
+  createdAt       DateTime @default(now())
+}
+
+model EmailSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email     String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model DailyReport {
+  id        String   @id @default(cuid())
+  date      String   // YYYY-MM-DD
+  type      ReportType
+  data      String   // JSON
+  createdAt DateTime @default(now())
+
+  @@unique([date, type])
+}
+
+enum Plan {
+  FREE
+  PRO
+  TEAM
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum EmailFrequency {
+  DAILY
+  WEEKLY
+  NONE
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum ReportType {
+  DIGEST
+  GITHUB_TRENDING
+  OVERSEAS_DEEP
+}

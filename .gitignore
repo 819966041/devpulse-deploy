@@ -1,0 +1,29 @@
+# 环境变量（含 API 密钥、SMTP 凭证）
+.env
+.env.local
+.env.*.local
+
+# 依赖
+node_modules/
+
+# 构建产物
+.next/
+out/
+
+# 数据库（含用户隐私数据）
+*.db
+*.db-journal
+*.db.bak-*
+
+# 运行时数据
+.sent-flags/
+output/
+logs/
+
+# 日志
+*.log
+nohup.out
+
+# 带服务器信息的脚本
+devpulse.ps1
+*.bat

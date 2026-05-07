@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /**
- * AI 摘要增强 — 用 Kimi API 对原始日报进行智能加工
+ * AI 摘要增强 — 三维评分 + 关键词标签 + 趋势 Highlights
  *
  * 功能：
- * 1. 为每条新闻生成一句话中文摘要
- * 2. 英文内容翻译为中文
- * 3. 精细化分类（AI/商业/产品/技术/社会/娱乐等）
- * 4. 价值评分（1-5星），过滤低价值内容
+ * 1. 三维评分：relevance(相关性) + quality(质量) + timeliness(时效性)，各 1-10，总分 30
+ * 2. 统一 8 类分类 + 每条 2-3 个关键词标签
+ * 3. 15-30 字中文摘要（说意义不复读标题）
+ * 4. 当日趋势 Highlights（200-300 字宏观趋势总结）
+ *
+ * 输出三档：enhanced(≥15) / selected(≥21) / digest(≥27)
  *
  * 用法：
  *   node enhance-digest.js                          # 处理今天的两份报告
@@ -71,21 +73,27 @@ function parseMdItems(md) {
 
 /**
  * 分批处理条目（每次最多 25 条，避免超出 token）
+ * 三维评分：relevance + quality + timeliness，各 1-10，总分 30
  */
-async function processBatch(items, source) {
-  if (items.length === 0) return [];
+async function processBatch(items, source, isLastBatch) {
+  if (items.length === 0) return { items: [], highlights: '' };
 
-  const system = `对资讯条目打分分类，输出JSON:{"items":[{"index":0,"summary":"15-30字中文摘要(说意义不复读标题)","category":"分类","value":1-10}]}
+  const system = `对资讯条目进行三维评分、分类、提取关键词，并生成趋势总结。输出JSON:
+{"items":[{"index":0,"summary":"15-30字中文摘要(说意义不复读标题)","category":"分类","tags":["标签1","标签2"],"relevance":1-10,"quality":1-10,"timeliness":1-10}],"highlights":"200-300字当日宏观趋势总结(仅最后一批返回)"}
+
 分类(8个):AI/大模型|云计算/基础设施|编程工具|前端/移动端|后端/数据库|安全/隐私|创业/融资|社会热点
-评分标准:
-1-3:水军/广告/纯娱乐八卦/无信息量
-4-5:一般科技新闻,无直接行动价值
-6-7:有信息量的行业动态,值得了解
-8-9:对开发者有直接参考价值的技术/产品/工具
-10:必读,行业级重大事件(如GPT发布、重大开源项目)
-规则:英文标题不改,摘要加中文注解;摘要要有具体信息不要空泛
-示例:{"index":0,"summary":"Anthropic发布Claude 4,代码生成SWE-bench达98%","category":"AI/大模型","value":10}
-示例:{"index":1,"summary":"某公司融资A轮,金额未披露,方向为AI客服","category":"创业/融资","value":5}`;
+
+三维评分标准:
+relevance(相关性): 1-2无关 → 5-6有关联 → 9-10核心技术话题
+quality(质量):     1-2标题党/广告 → 5-6有深度 → 9-10权威原创/一手信源
+timeliness(时效):  1-2过时内容 → 5-6有参考价值 → 9-10突发/首次报道
+
+关键词规则: 每条提取2-3个具体技术名词/产品名/事件名(不要泛词如"科技""发展")
+
+趋势总结规则: 总结当日技术圈核心动向、重点关注方向、值得追踪的变化(仅最后一批需要生成highlights字段)
+
+规则: 英文标题不改,摘要加中文注解;摘要要有具体信息不要空泛
+示例:{"index":0,"summary":"Anthropic发布Claude 4,代码生成SWE-bench达98%","category":"AI/大模型","tags":["Claude 4","SWE-bench","Anthropic"],"relevance":10,"quality":9,"timeliness":10}`;
 
   const userItems = items.map((item, i) => ({
     i,
@@ -93,79 +101,108 @@ async function processBatch(items, source) {
     m: item.meta || '',
   }));
 
-  const userMsg = `「${source}」${items.length}条:\n${JSON.stringify(userItems)}`;
+  const batchHint = isLastBatch ? '\n\n(这是最后一批，请生成highlights趋势总结)' : '\n\n(这不是最后一批，highlights留空字符串即可)';
+  const userMsg = `「${source}」${items.length}条:\n${JSON.stringify(userItems)}${batchHint}`;
 
   try {
     const result = await kimiChat(system, userMsg, true);
     const parsed = JSON.parse(result);
-    return parsed.items || [];
+    return {
+      items: parsed.items || [],
+      highlights: parsed.highlights || '',
+    };
   } catch (e) {
     console.log(`    ⚠ API 处理失败: ${e.message}`);
-    return [];
+    return { items: [], highlights: '' };
   }
 }
 
 /**
- * 生成增强版 Markdown（支持多版本）
+ * 计算三维总分（向下兼容旧数据：旧 value×3）
+ */
+function totalScore(p) {
+  if (p.relevance != null && p.quality != null && p.timeliness != null) {
+    return p.relevance + p.quality + p.timeliness;
+  }
+  return (p.value || 0) * 3;
+}
+
+/**
+ * 三维评分显示（总分 + 维度小字）
+ */
+function scoreDisplay(p) {
+  const total = totalScore(p);
+  const stars = total >= 27 ? '★★★★★' : total >= 21 ? '★★★★☆' : total >= 15 ? '★★★☆☆' : '★★☆☆☆';
+  if (p.relevance != null) {
+    return `${total}/30 ${stars} (相关${p.relevance}·质量${p.quality}·时效${p.timeliness})`;
+  }
+  return `${total}/30 ${stars}`;
+}
+
+/**
+ * 生成增强版 Markdown（三维评分 + 关键词 + 趋势 Highlights）
  * @param {string} source - 标题
  * @param {Array} items - 原始条目
  * @param {Array} processed - AI处理结果
- * @param {Object} options - { minScore: 5, label: '完整版' }
+ * @param {string} highlights - 趋势总结
+ * @param {Object} options - { minScore: 15, label: '完整版' }
  */
-function generateEnhancedMd(source, items, processed, options = {}) {
-  const { minScore = 5, label = '' } = options;
+function generateEnhancedMd(source, items, processed, highlights, options = {}) {
+  const { minScore = 15, label = '' } = options;
   const dateStr = getToday();
   const days = ['日', '一', '二', '三', '四', '五', '六'];
   const weekday = `星期${days[new Date().getDay()]}`;
 
-  // 按 category 分组，每组内按 value 降序
+  // 按 category 分组，每组内按总分降序
   const grouped = {};
   for (let i = 0; i < items.length; i++) {
     const p = processed[i];
-    if (!p || p.value < minScore) continue;
+    if (!p) continue;
+    const score = totalScore(p);
+    if (score < minScore) continue;
 
     const cat = p.category || '其他';
     if (!grouped[cat]) grouped[cat] = [];
-    grouped[cat].push({ ...items[i], ...p });
+    grouped[cat].push({ ...items[i], ...p, _total: score });
   }
 
-  // 排序：每组内按 value 降序
+  // 每组内按总分降序
   for (const cat of Object.keys(grouped)) {
-    grouped[cat].sort((a, b) => b.value - a.value);
+    grouped[cat].sort((a, b) => b._total - a._total);
   }
 
-  // 排序分类：按最高分排序
+  // 分类按最高分排序
   const sortedCats = Object.entries(grouped).sort(
-    (a, b) => Math.max(...b[1].map(x => x.value)) - Math.max(...a[1].map(x => x.value))
+    (a, b) => Math.max(...b[1].map(x => x._total)) - Math.max(...a[1].map(x => x._total))
   );
 
   let md = `# ${source}\n\n`;
   const labelStr = label ? ` · ${label}` : '';
-  md += `> ${dateStr} ${weekday} · AI 精选${labelStr} · 价值 ≥ ${minScore} 分\n\n`;
+  md += `> ${dateStr} ${weekday} · AI 三维精选${labelStr} · 总分 ≥ ${minScore}/30\n\n`;
 
-  // 10分制评分显示
-  const valueDisplay = (v) => {
-    if (v >= 9) return `${v}/10 ★★★★★`;
-    if (v >= 7) return `${v}/10 ★★★★☆`;
-    if (v >= 5) return `${v}/10 ★★★☆☆`;
-    return `${v}/10`;
-  };
+  // 趋势 Highlights
+  if (highlights) {
+    md += `## 📈 今日趋势\n\n`;
+    md += `${highlights}\n\n`;
+    md += `---\n\n`;
+  }
 
   for (const [cat, catItems] of sortedCats) {
     md += `## ${cat}\n\n`;
 
     for (const item of catItems) {
-      const display = valueDisplay(item.value);
-      md += `- [${item.title}](${item.url})\n`;
+      const display = scoreDisplay(item);
+      const tags = item.tags && item.tags.length > 0 ? ` \`${item.tags.join('` `')}\`` : '';
+      md += `- [${item.title}](${item.url})${tags}\n`;
       md += `  > ${item.summary} · ${display}\n\n`;
     }
   }
 
   // 统计
   const total = sortedCats.reduce((sum, [, items]) => sum + items.length, 0);
-  const mustRead = sortedCats.reduce((sum, [, items]) => sum + items.filter(i => i.value >= 8).length, 0);
+  const mustRead = sortedCats.reduce((sum, [, items]) => sum + items.filter(i => i._total >= 24).length, 0);
   md += `---\n\n`;
-  md += `*共 ${total} 条 · 必读 ${mustRead} 条（8分+）*\n`;
+  md += `*共 ${total} 条 · 必读 ${mustRead} 条（24分+）*\n`;
 
   return md;
 }
@@ -196,19 +233,24 @@ async function enhanceFile(filename, label) {
   // 分批处理（每批 25 条，平衡准确率和成本）
   const BATCH = 25;
   const processed = [];
+  let highlights = '';
+  const totalBatches = Math.ceil(items.length / BATCH);
   for (let i = 0; i < items.length; i += BATCH) {
     const batch = items.slice(i, i + BATCH);
+    const batchIdx = Math.floor(i / BATCH);
+    const isLast = batchIdx === totalBatches - 1;
     console.log(`    处理第 ${i + 1}-${i + batch.length} 条 ...`);
-    const results = await processBatch(batch, label);
-    processed.push(...results);
+    const result = await processBatch(batch, label, isLast);
+    processed.push(...result.items);
+    if (result.highlights) highlights = result.highlights;
   }
 
-  // 生成多版本增强报告
+  // 生成多版本增强报告（三维评分阈值：满分30）
   const sourceName = filename.replace(/\.md$/, '').replace(/^.*-/, '');
   const versions = [
-    { suffix: '-enhanced.md', minScore: 5, label: '完整版' },
-    { suffix: '-selected.md', minScore: 7, label: '精选版' },
-    { suffix: '-digest.md', minScore: 9, label: '摘要版' },
+    { suffix: '-enhanced.md', minScore: 15, label: '完整版' },
+    { suffix: '-selected.md', minScore: 21, label: '精选版' },
+    { suffix: '-digest.md', minScore: 27, label: '摘要版' },
   ];
 
   for (const ver of versions) {
@@ -216,6 +258,7 @@ async function enhanceFile(filename, label) {
       `${sourceName} · ${label}`,
       items,
       processed,
+      highlights,
       { minScore: ver.minScore, label: ver.label }
     );
     const outputPath = path.join(outputDir, filename.replace('.md', ver.suffix));

@@ -134,12 +134,14 @@ function parseGithubEnhanced(md) {
   for (let i = 0; i < lines.length; i++) {
     const m = lines[i].match(/^-\s*\[([^\]]+)\]\(([^)]+)\)/);
     if (!m) continue;
-    let summary = '', value = 5;
+    let summary = '', value = 15;
     if (i + 1 < lines.length) {
-      const sm = lines[i + 1].match(/^>\s*(.+?)\s*[·]\s*(\d+)\/\d+\s*(★+)/);
-      const smOld = lines[i + 1].match(/^>\s*(.+?)\s*[·]\s*(★+)/);
-      if (sm) { summary = sm[1].trim(); value = parseInt(sm[2]); }
-      else if (smOld) { summary = smOld[1].trim(); value = smOld[2].length; }
+      const sm3d = lines[i + 1].match(/^\s*>\s*(.+?)\s*[·]\s*(\d+)\/30/);
+      if (sm3d) { summary = sm3d[1].trim(); value = parseInt(sm3d[2]); }
+      else {
+        const sm = lines[i + 1].match(/^\s*>\s*(.+?)\s*[·]\s*(\d+)\/\d+/);
+        if (sm) { summary = sm[1].trim(); value = parseInt(sm[2]) * 3; }
+      }
     }
     summaries[m[1]] = { summary, value };
   }
@@ -152,21 +154,43 @@ function parseDigestEnhanced(md) {
   const lines = md.split('\n');
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+
+    // 趋势 Highlights
+    if (line.match(/今日趋势/)) {
+      let text = '';
+      for (let j = i + 2; j < lines.length && !lines[j].match(/^---/); j++) {
+        text += lines[j] + '\n';
+      }
+      items.push({ type: 'highlights', text: text.trim() });
+      continue;
+    }
+
+    // 分类标题
     const catMatch = line.match(/^#{2,3}\s+(.+)$/);
     if (catMatch) { items.push({ type: 'category', name: catMatch[1] }); continue; }
+    // 条目
     const itemMatch = line.match(/^-\s*\[([^\]]+)\]\(([^)]+)\)/);
     if (itemMatch) {
-      let summary = '', value = 5, category = '';
+      let summary = '', value = 15, category = '';
+      const tags = [];
+      const tagPart = line.match(/`([^`]+)`/g);
+      if (tagPart) {
+        for (const t of tagPart) tags.push(t.replace(/`/g, ''));
+      }
       if (i + 1 < lines.length) {
-        const sm = lines[i + 1].match(/^>\s*(.+?)\s*[·]\s*(\d+)\/\d+\s*(★+)/);
-        const smOld = lines[i + 1].match(/^>\s*(.+?)\s*[·]\s*(★+)/);
-        if (sm) { summary = sm[1].trim(); value = parseInt(sm[2]); }
-        else if (smOld) { summary = smOld[1].trim(); value = smOld[2].length; }
+        // 三维评分: > 摘要 · 27/30 ★★★★★ (相关10·质量9·时效8) (可能有前导空格)
+        const sm3d = lines[i + 1].match(/^\s*>\s*(.+?)\s*[·]\s*(\d+)\/30/);
+        if (sm3d) { summary = sm3d[1].trim(); value = parseInt(sm3d[2]); }
+        else {
+          // 向下兼容旧 10 分制: × 3
+          const sm = lines[i + 1].match(/^\s*>\s*(.+?)\s*[·]\s*(\d+)\/\d+/);
+          if (sm) { summary = sm[1].trim(); value = parseInt(sm[2]) * 3; }
+        }
       }
       for (let j = items.length - 1; j >= 0; j--) {
         if (items[j].type === 'category') { category = items[j].name; break; }
       }
-      items.push({ type: 'item', title: itemMatch[1], url: itemMatch[2], summary, value, category });
+      items.push({ type: 'item', title: itemMatch[1], url: itemMatch[2], summary, value, tags, category });
     }
   }
   return items;
@@ -214,7 +238,7 @@ function sectionTitle(text, subtitle) {
 }
 
 function top5Section(items) {
-  const scoredItems = items.filter(i => i.type === 'item' && i.value >= 7);
+  const scoredItems = items.filter(i => i.type === 'item' && i.value >= 21);
   scoredItems.sort((a, b) => b.value - a.value);
   const top5 = [];
   const usedCats = new Set();
@@ -231,10 +255,10 @@ function top5Section(items) {
 
   const scoreBadge = (v) => {
     let bg, color, label;
-    if (v >= 9) { bg = '#FEF3C7'; color = '#B45309'; label = '必读'; }
-    else if (v >= 7) { bg = '#E0E7FF'; color = '#4338CA'; label = '推荐'; }
+    if (v >= 27) { bg = '#FEF3C7'; color = '#B45309'; label = '必读'; }
+    else if (v >= 21) { bg = '#E0E7FF'; color = '#4338CA'; label = '推荐'; }
     else { bg = '#F3F4F6'; color = '#6B7280'; label = '关注'; }
-    return `<span style="display:inline-block;margin-left:6px;padding:1px 8px;background-color:${bg};border-radius:4px;font-size:11px;color:${color};font-weight:600;font-family:${BRAND.font};">${label} ${v}</span>`;
+    return `<span style="display:inline-block;margin-left:6px;padding:1px 8px;background-color:${bg};border-radius:4px;font-size:11px;color:${color};font-weight:600;font-family:${BRAND.font};">${label} ${v}/30</span>`;
   };
   const catTag = (cat) => {
     const dotColor = CAT_COLORS[cat] || '#9CA3AF';
@@ -354,12 +378,12 @@ function generateGithubCardsHtml(repos, summaries, analysis) {
     </tr></table>`;
       }
       if (ai && ai.summary) {
-        const scoreColor = ai.value >= 9 ? '#B45309' : ai.value >= 7 ? '#4338CA' : BRAND.textMuted;
-        const aiLabel = ai.value >= 9 ? '必读' : ai.value >= 7 ? '推荐' : '关注';
+        const scoreColor = ai.value >= 27 ? '#B45309' : ai.value >= 21 ? '#4338CA' : BRAND.textMuted;
+        const aiLabel = ai.value >= 27 ? '必读' : ai.value >= 21 ? '推荐' : '关注';
         const borderTop = deep ? `border-top:1px solid ${BRAND.border};` : '';
         html += `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-      <td style="padding:0 24px;"><div style="${borderTop}padding:10px 0;background:#F9FAFB;font-size:13px;color:#374151;line-height:1.6;font-family:${BRAND.font};">${esc(ai.summary)}<span style="display:inline-block;float:right;color:${scoreColor};font-weight:600;font-size:12px;">${aiLabel} ${ai.value}</span></div></td>
+      <td style="padding:0 24px;"><div style="${borderTop}padding:10px 0;background:#F9FAFB;font-size:13px;color:#374151;line-height:1.6;font-family:${BRAND.font};">${esc(ai.summary)}<span style="display:inline-block;float:right;color:${scoreColor};font-weight:600;font-size:12px;">${aiLabel} ${ai.value}/30</span></div></td>
     </tr></table>`;
       }
       html += `</td></tr></table>`;
@@ -418,7 +442,7 @@ function hotNewsSection(digestItems) {
     </tr></table>`;
       }
       for (const item of cat.items) {
-        const scoreBadge = item.value >= 9 ? `<span style="display:inline-block;margin-left:6px;padding:1px 8px;background-color:#FEF3C7;border-radius:4px;font-size:11px;color:#B45309;font-weight:600;font-family:${BRAND.font};">必读</span>` : item.value >= 8 ? `<span style="display:inline-block;margin-left:6px;padding:1px 8px;background-color:#E0E7FF;border-radius:4px;font-size:11px;color:#4338CA;font-weight:600;font-family:${BRAND.font};">推荐</span>` : '';
+        const scoreBadge = item.value >= 27 ? `<span style="display:inline-block;margin-left:6px;padding:1px 8px;background-color:#FEF3C7;border-radius:4px;font-size:11px;color:#B45309;font-weight:600;font-family:${BRAND.font};">必读 ${item.value}/30</span>` : item.value >= 21 ? `<span style="display:inline-block;margin-left:6px;padding:1px 8px;background-color:#E0E7FF;border-radius:4px;font-size:11px;color:#4338CA;font-weight:600;font-family:${BRAND.font};">推荐 ${item.value}/30</span>` : '';
         html += `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
       <td style="padding:6px 20px 6px 20px;border-top:1px solid ${zone.color}11;">

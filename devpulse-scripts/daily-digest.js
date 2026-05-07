@@ -24,6 +24,8 @@ const path = require('path');
 const config = require('./config');
 const { getToday, getWeekday, execWithTimeout, formatMeta, generateMarkdown, formatNumber, dedupItems } = require('./utils');
 const { logger, Metrics } = require('./logger');
+const { collectAll: collectRssBlogs } = require('./sources/rss-blog');
+const { collectAll: collectXAccounts } = require('./sources/x-accounts');
 
 const args = process.argv.slice(2);
 const publicOnly = args.includes('--public');
@@ -239,6 +241,26 @@ async function main() {
   logger.info(`开始采集 ${platforms.length} 个平台`);
 
   const allItems = await collectAll(platforms);
+
+  // 阶段三：X/Twitter KOL 推文
+  console.log(`\n  阶段三：X/Twitter KOL 推文`);
+  try {
+    const xItems = await collectXAccounts();
+    allItems.push(...xItems);
+    logger.info(`X/Twitter KOL: ${xItems.length} 条`);
+  } catch (e) {
+    logger.warn(`X/Twitter KOL 采集失败: ${e.message}`);
+  }
+
+  // 阶段四：RSS 技术博客采集
+  console.log(`\n  阶段四：RSS 技术博客`);
+  try {
+    const rssItems = await collectRssBlogs();
+    allItems.push(...rssItems);
+    logger.info(`RSS 博客采集: ${rssItems.length} 条`);
+  } catch (e) {
+    logger.warn(`RSS 博客采集失败: ${e.message}`);
+  }
 
   // 去重
   const beforeDedup = allItems.length;

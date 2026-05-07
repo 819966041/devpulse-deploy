@@ -1,132 +1,178 @@
 import { NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
 
-// 模拟数据库中的日报数据
-const digestDatabase = [
-  {
-    id: 1,
-    title: "OpenAI发布GPT-5预览版：推理能力超越人类专家",
-    score: 9,
-    category: "AI/大模型",
-    summary: "OpenAI发布GPT-5预览版，在复杂推理任务上表现超越人类专家，支持多模态输入和更长上下文",
-    source: "HackerNews",
-    date: "2026-04-20",
-    tags: ["必读", "AI"],
-    url: "https://news.ycombinator.com/item?id=123456"
-  },
-  {
-    id: 2,
-    title: "React 19正式发布：并发特性全面升级",
-    score: 8,
-    category: "前端框架",
-    summary: "React 19正式发布，引入并发特性、Suspense改进和新的Hooks，大幅提升应用性能",
-    source: "GitHub",
-    date: "2026-04-20",
-    tags: ["推荐", "React"],
-    url: "https://github.com/facebook/react/releases/tag/v19.0.0"
-  },
-  {
-    id: 3,
-    title: "苹果M4芯片性能评测：AI计算能力提升300%",
-    score: 8,
-    category: "硬件",
-    summary: "苹果M4芯片在AI计算性能上提升300%，神经网络引擎支持更大模型推理",
-    source: "MacRumors",
-    date: "2026-04-20",
-    tags: ["必读", "苹果"],
-    url: "https://www.macrumors.com/2026/04/20/m4-chip-benchmark/"
-  },
-  {
-    id: 4,
-    title: "Meta发布LLaMA 3：开源大模型新标杆",
-    score: 9,
-    category: "AI/大模型",
-    summary: "Meta发布LLaMA 3开源大模型，参数规模达到400B，在多个基准测试中超越闭源模型",
-    source: "GitHub",
-    date: "2026-04-20",
-    tags: ["必读", "开源"],
-    url: "https://github.com/meta-llama/llama3"
-  },
-  {
-    id: 5,
-    title: "GitHub Copilot Chat支持中文编程助手",
-    score: 7,
-    category: "编程工具",
-    summary: "GitHub Copilot Chat正式支持中文编程，提供智能代码补全和错误修复功能",
-    source: "GitHub Blog",
-    date: "2026-04-20",
-    tags: ["推荐", "工具"],
-    url: "https://github.blog/2026-04-20/github-copilot-chat-chinese/"
-  }
-];
+const OUTPUT_DIR = path.join(process.cwd(), '..', 'output');
 
-// GitHub Trending 数据
-const githubTrending = [
-  {
-    title: "vercel/ai",
-    stars: 12800,
-    description: "Build AI-powered applications with React, Svelte, Vue, and Solid",
-    language: "TypeScript",
-    color: "#3178c6",
-    url: "https://github.com/vercel/ai"
-  },
-  {
-    title: "anthropics/claude-code",
-    stars: 9500,
-    description: "An agentic coding tool that lives in your terminal",
-    language: "TypeScript",
-    color: "#3178c6",
-    url: "https://github.com/anthropics/claude-code"
-  },
-  {
-    title: "langchain-ai/langchain",
-    stars: 98000,
-    description: "Build context-aware reasoning applications",
-    language: "Python",
-    color: "#3572A5",
-    url: "https://github.com/langchain-ai/langchain"
-  },
-  {
-    title: "deepseek-ai/DeepSeek-V3",
-    stars: 8500,
-    description: "DeepSeek-V3: A strong Mixture-of-Experts language model",
-    language: "Python",
-    color: "#3572A5",
-    url: "https://github.com/deepseek-ai/DeepSeek-V3"
+const LANG_COLORS: Record<string, string> = {
+  'Python': '#3572A5', 'JavaScript': '#f1e05a', 'TypeScript': '#3178c6',
+  'Rust': '#dea584', 'Go': '#00ADD8', 'Java': '#b07219',
+  'C++': '#f34b7d', 'C#': '#178600', 'Swift': '#F05138',
+  'PHP': '#4F5D95', 'Shell': '#89e051', 'HTML': '#e34c26',
+  'Jupyter Notebook': '#DA5B0B', 'Ruby': '#701516',
+};
+
+function getChinaDateStr(): string {
+  const now = new Date();
+  const utc8 = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  return utc8.toISOString().slice(0, 10);
+}
+
+function readFile(filename: string): string | null {
+  const p = path.join(OUTPUT_DIR, filename);
+  if (!fs.existsSync(p)) return null;
+  return fs.readFileSync(p, 'utf-8');
+}
+
+function findLatestDate(): string | null {
+  if (!fs.existsSync(OUTPUT_DIR)) return null;
+  const files = fs.readdirSync(OUTPUT_DIR);
+  const dates = new Set<string>();
+  for (const f of files) {
+    const m = f.match(/^daily-digest-(\d{4}-\d{2}-\d{2})/);
+    if (m) dates.add(m[1]);
   }
-];
+  if (dates.size === 0) return null;
+  return [...dates].sort().reverse()[0];
+}
+
+function parseDigestEnhanced(md: string) {
+  const items: Array<{
+    title: string; url: string; summary: string; score: number;
+    cat: string; source: string; tags: string[];
+  }> = [];
+  const lines = md.split('\n');
+  let currentCat = '';
+
+  for (let i = 0; i < lines.length; i++) {
+    const catMatch = lines[i].match(/^#{2,3}\s+(.+)$/);
+    if (catMatch) { currentCat = catMatch[1]; continue; }
+
+    const itemMatch = lines[i].match(/^-\s*\[([^\]]+)\]\(([^)]+)\)/);
+    if (itemMatch) {
+      let summary = '';
+      let value = 0;
+      const tags: string[] = [];
+
+      const tagPart = lines[i].match(/`([^`]+)`/g);
+      if (tagPart) {
+        for (const t of tagPart) tags.push(t.replace(/`/g, ''));
+      }
+
+      if (i + 1 < lines.length) {
+        const sm3d = lines[i + 1].match(/^\s*>\s*(.+?)\s*[·]\s*(\d+)\/30/);
+        if (sm3d) { summary = sm3d[1].trim(); value = parseInt(sm3d[2]); }
+        else {
+          const sm = lines[i + 1].match(/^\s*>\s*(.+?)\s*[·]\s*(\d+)\/\d+/);
+          if (sm) { summary = sm[1].trim(); value = parseInt(sm[2]) * 3; }
+        }
+      }
+
+      items.push({
+        title: itemMatch[1],
+        url: itemMatch[2],
+        summary,
+        score: Math.round(value / 3),
+        cat: currentCat,
+        source: tags[0] || currentCat,
+        tags,
+      });
+    }
+  }
+  return items;
+}
+
+function parseGithubRaw(md: string) {
+  const items: Array<{
+    title: string; url: string; description: string;
+    language: string; color: string; stars: number;
+  }> = [];
+  const lines = md.split('\n');
+
+  for (const line of lines) {
+    const m = line.match(/^\|\s*\d+\s*\|\s*\[([^\]]+)\]\(([^)]+)\)(?:<br><small>([^<]*)<\/small>)?\s*\|\s*(\S+)\s*\|\s*\*?\*?([^\*|]+)\*?\*?\s*\|\s*(\S+)\s*\|/);
+    if (!m) continue;
+    const lang = m[4] === '-' ? '' : m[4];
+    const starsStr = m[5].trim().replace(/,/g, '');
+    const stars = parseFloat(starsStr) || 0;
+    items.push({
+      title: m[1],
+      url: m[2],
+      description: m[3] || '',
+      language: lang,
+      color: LANG_COLORS[lang] || '#9CA3AF',
+      stars,
+    });
+  }
+  return items;
+}
 
 export async function GET() {
   try {
-    // 获取当前日期
-    const today = new Date().toISOString().split('T')[0];
-    
-    // 模拟从数据库获取数据
-    const topItems = digestDatabase.map(item => ({
-      title: item.title,
-      score: item.score,
-      cat: item.category,
-      summary: item.summary,
-      source: item.source,
-      tags: item.tags,
-      url: item.url
-    }));
+    const todayChina = getChinaDateStr();
+    let date = todayChina;
 
-    const githubItems = githubTrending.map(repo => ({
-      title: repo.title,
-      stars: repo.stars,
-      description: repo.description,
-      language: repo.language,
-      color: repo.color,
-      url: repo.url
-    }));
+    let digestMd = readFile(`daily-digest-${date}-enhanced.md`);
+    let githubMd = readFile(`github-trending-${date}.md`);
+
+    if (!digestMd && !githubMd) {
+      const latest = findLatestDate();
+      if (latest) {
+        date = latest;
+        digestMd = readFile(`daily-digest-${date}-enhanced.md`);
+        githubMd = readFile(`github-trending-${date}.md`);
+      }
+    }
+
+    let topItems: Array<{
+      title: string; url: string; summary: string;
+      score: number; cat: string; source: string; tags: string[];
+    }> = [];
+
+    if (digestMd) {
+      const allItems = parseDigestEnhanced(digestMd);
+      allItems.sort((a, b) => b.score - a.score);
+      const selected: typeof allItems = [];
+      const usedCats = new Set<string>();
+      for (const item of allItems) {
+        if (selected.length >= 5) break;
+        if (!usedCats.has(item.cat)) {
+          selected.push(item);
+          usedCats.add(item.cat);
+        }
+      }
+      for (const item of allItems) {
+        if (selected.length >= 5) break;
+        if (!selected.includes(item)) selected.push(item);
+      }
+      selected.sort((a, b) => b.score - a.score);
+      topItems = selected;
+    }
+
+    let githubItems: Array<{
+      title: string; url: string; description: string;
+      language: string; color: string; stars: number;
+    }> = [];
+
+    if (githubMd) {
+      const lines = githubMd.split('\n');
+      let inDaily = false;
+      let dailyLines = '';
+      for (const line of lines) {
+        if (line.match(/^###\s+今日/)) { inDaily = true; continue; }
+        if (line.match(/^###\s+(本周|本月)/)) { inDaily = false; continue; }
+        if (inDaily) dailyLines += line + '\n';
+      }
+      githubItems = parseGithubRaw(dailyLines || githubMd).slice(0, 8);
+    }
 
     return NextResponse.json({
       success: true,
       data: {
-        date: today,
+        date,
         topItems,
-        githubItems
-      }
+        githubItems,
+      },
     });
   } catch (error) {
     console.error('Error fetching digest data:', error);

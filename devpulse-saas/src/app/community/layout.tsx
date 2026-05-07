@@ -53,7 +53,8 @@ export default function CommunityLayout({
         <div className="max-w-5xl mx-auto px-4">
           <p>🆓 DevPulse 社区版 — 完全免费 · 开源贡献驱动</p>
           <p className="mt-1 text-xs text-gray-300">
-            Powered by AI + Open Source Community
+            <a href="https://github.com/819966041/devpulse-deploy" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-[var(--primary)] transition">GitHub</a>
+            {" · "}Powered by AI + Open Source Community
           </p>
         </div>
       </footer>

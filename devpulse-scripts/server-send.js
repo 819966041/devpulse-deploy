@@ -472,7 +472,7 @@ function brandFooter() {
 function runEnhance(filename, label) {
   console.log(`  AI 增强 ${label} ...`);
   try {
-    execSync(`node enhance-digest.js --file ${filename}`, { cwd: scriptsDir, stdio: 'pipe', timeout: 300000 });
+    execSync(`node enhance-digest.js --file ${filename}`, { cwd: scriptsDir, stdio: 'pipe', timeout: 600000 });
     console.log(`    ✓ ${label} 增强完成`);
     return true;
   } catch (e) {

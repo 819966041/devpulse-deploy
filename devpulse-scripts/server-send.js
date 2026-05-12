@@ -484,7 +484,7 @@ function runEnhance(filename, label) {
 function runAnalysis() {
   console.log('  GitHub 深度分析 ...');
   try {
-    execSync('node github-analysis.js', { cwd: scriptsDir, stdio: 'pipe', timeout: 480000 });
+    execSync('node github-analysis.js', { cwd: scriptsDir, stdio: 'pipe', timeout: 600000 });
     console.log('    ✓ 深度分析完成');
     return true;
   } catch (e) {

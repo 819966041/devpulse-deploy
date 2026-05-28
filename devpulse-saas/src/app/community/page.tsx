@@ -301,7 +301,7 @@ export default function CommunityPage() {
             <h2 className="text-xl font-bold mb-2">⚡ 一键注册，立即体验</h2>
             <p className="text-sm text-gray-400">只需一个邮箱，3秒完成注册，默认密码已为你生成</p>
           </div>
-          <form className="space-y-3">
+          <form onSubmit={handleQuickRegister} className="space-y-3">
             <input
               type="text"
               placeholder="你的昵称（选填）"

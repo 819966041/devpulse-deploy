@@ -36,6 +36,9 @@ export default function CommunityLayout({
             <a href="#github" className="text-gray-500 hover:text-[var(--primary)] no-underline">
               GitHub
             </a>
+            <a href="/unsubscribe" className="text-gray-500 hover:text-[var(--primary)] no-underline">
+              退订
+            </a>
             <a
               href="#join"
               className="px-4 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm no-underline hover:bg-[var(--primary-light)] transition"
@@ -54,7 +57,7 @@ export default function CommunityLayout({
           <p>🆓 DevPulse 社区版 — 完全免费 · 开源贡献驱动</p>
           <p className="mt-1 text-xs text-gray-300">
             <a href="https://github.com/819966041/devpulse-deploy" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-[var(--primary)] transition">GitHub</a>
-            {" · "}Powered by AI + Open Source Community
+            {" · "}<a href="/unsubscribe" className="text-gray-400 hover:text-[var(--primary)] transition">退订</a>{" · "}Powered by AI + Open Source Community
           </p>
         </div>
       </footer>

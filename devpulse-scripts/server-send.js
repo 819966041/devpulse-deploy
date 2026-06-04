@@ -600,109 +600,12 @@ function sendWechatChunk(content) {
 }
 
 function pushDailyReport(today, weekday, digestItems, repos, summaries) {
-  const chunks = [];
-  let current = '';
+  const baseUrl = process.env.SITE_URL || 'https://devpulse.ai';
+  const digestUrl = `${baseUrl}/digest/${today}`;
+  const msg = `# 📰 DevPulse AI 日报 | ${today} ${weekday}\n\n> 已发送给 ${recipientCount} 位订阅者\n\n[📄 点击阅读完整日报](${digestUrl})`;
 
-  function flush() {
-    if (current.trim()) chunks.push(current.trim());
-    current = '';
-  }
-  function addLine(line) {
-    const next = current ? current + '\n' + line : line;
-    if (Buffer.byteLength(next, 'utf-8') > WECHAT_MAX_BYTES) {
-      flush();
-      current = line;
-    } else {
-      current = next;
-    }
-  }
-
-  // 头部
-  addLine(`# 📊 DevPulse AI 日报 | ${today} ${weekday}`);
-  addLine(`> 已发送给 ${recipientCount} 位订阅者`);
-  addLine('');
-
-  // TOP 5
-  const scored = digestItems.filter(i => i.type === 'item' && i.value >= 21).sort((a, b) => b.value - a.value);
-  const top5 = [];
-  const usedCats = new Set();
-  for (const item of scored) {
-    if (top5.length >= 5) break;
-    if (!usedCats.has(item.category)) { top5.push(item); usedCats.add(item.category); }
-  }
-  for (const item of scored) {
-    if (top5.length >= 5) break;
-    if (!top5.includes(item)) top5.push(item);
-  }
-  top5.sort((a, b) => b.value - a.value);
-
-  if (top5.length > 0) {
-    addLine(`## 🔥 今日必读 TOP 5`);
-    top5.forEach((item, i) => {
-      const label = item.value >= 27 ? '<font color="warning">必读</font>' : '<font color="info">推荐</font>';
-      addLine(`${i + 1}. **${item.title}** [🔗](${item.url})`);
-      addLine(`   > ${item.summary} · ${label} ${item.value}/30`);
-    });
-    addLine('');
-  }
-
-  // GitHub Trending
-  if (repos && Object.keys(repos).length > 0) {
-    addLine(`## 🐙 GitHub Trending`);
-    const daily = Object.values(repos).filter(r => r.section === 'daily').slice(0, 10);
-    daily.forEach(repo => {
-      const ai = summaries?.[repo.name];
-      let line = `- **[${repo.name}](${repo.url})** ⭐ ${repo.stars}`;
-      if (repo.language) line += ` \`${repo.language}\``;
-      addLine(line);
-      if (ai?.summary) addLine(`  > ${ai.summary} · ${ai.value}/30`);
-    });
-    addLine('');
-  }
-
-  // 热点资讯（按分类）
-  let currentCat = '';
-  for (const item of digestItems) {
-    if (item.type === 'category') { currentCat = item.name; continue; }
-    if (item.type !== 'item') continue;
-    if (item.value >= 21) continue; // TOP 5 已包含
-  }
-
-  // 从 digestItems 按分类汇总
-  const catMap = {};
-  let cat = '';
-  for (const item of digestItems) {
-    if (item.type === 'category') { cat = item.name; continue; }
-    if (item.type === 'item') {
-      if (!catMap[cat]) catMap[cat] = [];
-      catMap[cat].push(item);
-    }
-  }
-
-  if (Object.keys(catMap).length > 0) {
-    addLine(`## 📰 热点资讯`);
-    for (const [catName, items] of Object.entries(catMap)) {
-      addLine(`**${catName}** (${items.length}条)`);
-      items.slice(0, 5).forEach(item => {
-        addLine(`- [${item.title}](${item.url})`);
-        if (item.summary) addLine(`  > ${item.summary}`);
-      });
-      if (items.length > 5) addLine(`  ...及其他 ${items.length - 5} 条`);
-      addLine('');
-    }
-  }
-
-  flush();
-
-  // 逐段推送
-  chunks.forEach((chunk, i) => {
-    sendWechatChunk(chunk);
-    if (i < chunks.length - 1) {
-      // 避免推送太快被限流
-      execSync('sleep 1', { stdio: 'pipe' });
-    }
-  });
-  console.log(`  ✓ 企业微信推送完成 (${chunks.length} 条消息)`);
+  sendWechatChunk(msg);
+  console.log(`  ✓ 企业微信推送完成（链接模式）: ${digestUrl}`);
 }
 
 var recipientCount = 1; // 全局变量，pushDailyReport 中使用

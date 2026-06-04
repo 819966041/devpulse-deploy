@@ -553,11 +553,13 @@ ${body}
   console.log('  发送邮件中 ...');
 
   let recipients = emailConfig.to;
+  let recipientCount = 1;
   if (prisma) {
     try {
       const subs = await prisma.emailSubscription.findMany({ where: { active: true } });
       if (subs.length > 0) {
         recipients = subs.map(s => s.email).join(',');
+        recipientCount = subs.length;
         console.log(`  📬 ${subs.length} 位订阅者`);
       }
     } catch (e) {
@@ -569,10 +571,33 @@ ${body}
   try {
     await transporter.sendMail({ from: emailConfig.from, to: recipients, subject: `DevPulse AI | ${today} ${weekday}`, html: htmlBody, attachments });
     console.log('  ✓ 邮件发送成功');
+    pushWechatNotify(today, weekday, recipientCount, true);
     return true;
   } catch (e) {
     console.log(`  ✗ 邮件发送失败: ${e.message}`);
+    pushWechatNotify(today, weekday, recipientCount, false);
     return false;
+  }
+}
+
+// ─── 企业微信推送 ───
+
+const WECHAT_WEBHOOK = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=202da55c-1c35-4bd2-bc12-15d15c73f51c';
+
+function pushWechatNotify(today, weekday, recipientCount, success) {
+  const status = success ? '✅ 发送成功' : '❌ 发送失败';
+  const text = [
+    `📊 DevPulse AI 日报通知`,
+    `日期: ${today} ${weekday}`,
+    `状态: ${status}`,
+    `订阅者: ${recipientCount} 人`,
+  ].join('\n');
+
+  try {
+    execSync(`curl -s -X POST "${WECHAT_WEBHOOK}" -H "Content-Type: application/json" -d '${JSON.stringify({ msgtype: "text", text: { content: text } })}'`, { stdio: 'pipe', timeout: 10000 });
+    console.log('  ✓ 企业微信推送成功');
+  } catch (e) {
+    console.log(`  ✗ 企业微信推送失败: ${e.message?.slice(0, 80)}`);
   }
 }
 

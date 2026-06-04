@@ -22,6 +22,14 @@ const providers = [
     timeout: 90000,
   },
   {
+    name: 'GLM-5.1',
+    apiKey: process.env.GLM_API_KEY,
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+    model: 'glm-5.1',
+    defaultMaxTokens: 8192,
+    timeout: 90000,
+  },
+  {
     name: 'Kimi',
     apiKey: process.env.KIMI_API_KEY,
     baseUrl: 'https://api.moonshot.cn/v1/chat/completions',

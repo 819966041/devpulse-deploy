@@ -521,9 +521,11 @@ async function sendEmail() {
   const digestItems = parseDigestEnhanced(digestMd);
   body += top5Section(digestItems);
 
+  let repos = null;
+  let summaries = null;
   if (githubRawMd) {
-    const repos = parseGithubRaw(githubRawMd);
-    const summaries = parseGithubEnhanced(githubEnhancedMd);
+    repos = parseGithubRaw(githubRawMd);
+    summaries = parseGithubEnhanced(githubEnhancedMd);
     const analysis = readAnalysis(today);
     body += generateGithubCardsHtml(repos, summaries, analysis);
   }
@@ -571,11 +573,10 @@ ${body}
   try {
     await transporter.sendMail({ from: emailConfig.from, to: recipients, subject: `DevPulse AI | ${today} ${weekday}`, html: htmlBody, attachments });
     console.log('  ✓ 邮件发送成功');
-    pushWechatNotify(today, weekday, recipientCount, true);
+    pushDailyReport(today, weekday, digestItems, repos, summaries);
     return true;
   } catch (e) {
     console.log(`  ✗ 邮件发送失败: ${e.message}`);
-    pushWechatNotify(today, weekday, recipientCount, false);
     return false;
   }
 }
@@ -583,23 +584,127 @@ ${body}
 // ─── 企业微信推送 ───
 
 const WECHAT_WEBHOOK = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=202da55c-1c35-4bd2-bc12-15d15c73f51c';
+const WECHAT_MAX_BYTES = 4000; // 留余量，企业微信限制 4096 字节
 
-function pushWechatNotify(today, weekday, recipientCount, success) {
-  const status = success ? '✅ 发送成功' : '❌ 发送失败';
-  const text = [
-    `📊 DevPulse AI 日报通知`,
-    `日期: ${today} ${weekday}`,
-    `状态: ${status}`,
-    `订阅者: ${recipientCount} 人`,
-  ].join('\n');
-
+function sendWechatChunk(content) {
   try {
-    execSync(`curl -s -X POST "${WECHAT_WEBHOOK}" -H "Content-Type: application/json" -d '${JSON.stringify({ msgtype: "text", text: { content: text } })}'`, { stdio: 'pipe', timeout: 10000 });
-    console.log('  ✓ 企业微信推送成功');
+    const payload = JSON.stringify({ msgtype: 'markdown', markdown: { content } });
+    const tmpFile = `/tmp/wechat-msg-${Date.now()}.json`;
+    fs.writeFileSync(tmpFile, payload, 'utf-8');
+    execSync(`curl -s -X POST "${WECHAT_WEBHOOK}" -H "Content-Type: application/json" -d @${tmpFile}`, { stdio: 'pipe', timeout: 10000 });
+    fs.unlinkSync(tmpFile);
   } catch (e) {
     console.log(`  ✗ 企业微信推送失败: ${e.message?.slice(0, 80)}`);
   }
 }
+
+function pushDailyReport(today, weekday, digestItems, repos, summaries) {
+  const chunks = [];
+  let current = '';
+
+  function flush() {
+    if (current.trim()) chunks.push(current.trim());
+    current = '';
+  }
+  function addLine(line) {
+    const next = current ? current + '\n' + line : line;
+    if (Buffer.byteLength(next, 'utf-8') > WECHAT_MAX_BYTES) {
+      flush();
+      current = line;
+    } else {
+      current = next;
+    }
+  }
+
+  // 头部
+  addLine(`# 📊 DevPulse AI 日报 | ${today} ${weekday}`);
+  addLine(`> 已发送给 ${recipientCount} 位订阅者`);
+  addLine('');
+
+  // TOP 5
+  const scored = digestItems.filter(i => i.type === 'item' && i.value >= 21).sort((a, b) => b.value - a.value);
+  const top5 = [];
+  const usedCats = new Set();
+  for (const item of scored) {
+    if (top5.length >= 5) break;
+    if (!usedCats.has(item.category)) { top5.push(item); usedCats.add(item.category); }
+  }
+  for (const item of scored) {
+    if (top5.length >= 5) break;
+    if (!top5.includes(item)) top5.push(item);
+  }
+  top5.sort((a, b) => b.value - a.value);
+
+  if (top5.length > 0) {
+    addLine(`## 🔥 今日必读 TOP 5`);
+    top5.forEach((item, i) => {
+      const label = item.value >= 27 ? '<font color="warning">必读</font>' : '<font color="info">推荐</font>';
+      addLine(`${i + 1}. **${item.title}** [🔗](${item.url})`);
+      addLine(`   > ${item.summary} · ${label} ${item.value}/30`);
+    });
+    addLine('');
+  }
+
+  // GitHub Trending
+  if (repos && Object.keys(repos).length > 0) {
+    addLine(`## 🐙 GitHub Trending`);
+    const daily = Object.values(repos).filter(r => r.section === 'daily').slice(0, 10);
+    daily.forEach(repo => {
+      const ai = summaries?.[repo.name];
+      let line = `- **[${repo.name}](${repo.url})** ⭐ ${repo.stars}`;
+      if (repo.language) line += ` \`${repo.language}\``;
+      addLine(line);
+      if (ai?.summary) addLine(`  > ${ai.summary} · ${ai.value}/30`);
+    });
+    addLine('');
+  }
+
+  // 热点资讯（按分类）
+  let currentCat = '';
+  for (const item of digestItems) {
+    if (item.type === 'category') { currentCat = item.name; continue; }
+    if (item.type !== 'item') continue;
+    if (item.value >= 21) continue; // TOP 5 已包含
+  }
+
+  // 从 digestItems 按分类汇总
+  const catMap = {};
+  let cat = '';
+  for (const item of digestItems) {
+    if (item.type === 'category') { cat = item.name; continue; }
+    if (item.type === 'item') {
+      if (!catMap[cat]) catMap[cat] = [];
+      catMap[cat].push(item);
+    }
+  }
+
+  if (Object.keys(catMap).length > 0) {
+    addLine(`## 📰 热点资讯`);
+    for (const [catName, items] of Object.entries(catMap)) {
+      addLine(`**${catName}** (${items.length}条)`);
+      items.slice(0, 5).forEach(item => {
+        addLine(`- [${item.title}](${item.url})`);
+        if (item.summary) addLine(`  > ${item.summary}`);
+      });
+      if (items.length > 5) addLine(`  ...及其他 ${items.length - 5} 条`);
+      addLine('');
+    }
+  }
+
+  flush();
+
+  // 逐段推送
+  chunks.forEach((chunk, i) => {
+    sendWechatChunk(chunk);
+    if (i < chunks.length - 1) {
+      // 避免推送太快被限流
+      execSync('sleep 1', { stdio: 'pipe' });
+    }
+  });
+  console.log(`  ✓ 企业微信推送完成 (${chunks.length} 条消息)`);
+}
+
+var recipientCount = 1; // 全局变量，pushDailyReport 中使用
 
 function alreadySent(today) {
   fs.mkdirSync(sentFlagDir, { recursive: true });

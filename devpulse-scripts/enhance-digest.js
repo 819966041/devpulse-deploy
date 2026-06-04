@@ -154,9 +154,15 @@ function generateEnhancedMd(source, items, processed, highlights, options = {}) 
   const weekday = `星期${days[new Date().getDay()]}`;
 
   // 按 category 分组，每组内按总分降序
+  // 用 AI 返回的 index 字段做映射，避免乱序导致张冠李戴
+  const processedMap = {};
+  for (const p of processed) {
+    if (p.index != null) processedMap[p.index] = p;
+  }
+
   const grouped = {};
   for (let i = 0; i < items.length; i++) {
-    const p = processed[i];
+    const p = processedMap[i] || processed[i]; // 优先用 index 映射，兼容旧数据
     if (!p) continue;
     const score = totalScore(p);
     if (score < minScore) continue;
@@ -241,6 +247,10 @@ async function enhanceFile(filename, label) {
     const isLast = batchIdx === totalBatches - 1;
     console.log(`    处理第 ${i + 1}-${i + batch.length} 条 ...`);
     const result = await processBatch(batch, label, isLast);
+    // 将批次内的 index 转换为全局 index，避免跨批次 index 冲突
+    for (const item of result.items) {
+      if (item.index != null) item.index += i;
+    }
     processed.push(...result.items);
     if (result.highlights) highlights = result.highlights;
   }

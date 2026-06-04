@@ -28,6 +28,8 @@ try {
 
 const args = process.argv.slice(2);
 const sendNow = args.includes('--now');
+const testMode = args.includes('--test');
+const testEmail = '819966041@qq.com';
 
 const scriptsDir = __dirname;
 const outputDir = path.join(__dirname, '..', 'output');
@@ -499,12 +501,7 @@ async function sendEmail() {
   const today = getToday();
   const weekday = getWeekday();
 
-  // AI 增强（读取已同步的原始数据）
-  runEnhance(`daily-digest-${today}.md`, '热点日报');
-  runEnhance(`github-trending-${today}.md`, 'GitHub Trending');
-  runEnhance(`overseas-deep-${today}.md`, '海外深度内容');
-  runAnalysis();
-
+  // 直接使用本地已增强并上传的数据（服务器不再重复增强）
   const githubRawMd = readReport(`github-trending-${today}.md`);
   const githubEnhancedMd = readReport(`github-trending-${today}-enhanced.md`);
   const digestMd = readReport(`daily-digest-${today}-enhanced.md`) || readReport(`daily-digest-${today}.md`);
@@ -556,7 +553,11 @@ ${body}
 
   let recipients = emailConfig.to;
   let recipientCount = 1;
-  if (prisma) {
+  if (testMode) {
+    recipients = testEmail;
+    recipientCount = 1;
+    console.log(`  🧪 测试模式: 仅发送到 ${testEmail}`);
+  } else if (prisma) {
     try {
       const subs = await prisma.emailSubscription.findMany({ where: { active: true } });
       if (subs.length > 0) {
@@ -573,7 +574,7 @@ ${body}
   try {
     await transporter.sendMail({ from: emailConfig.from, to: recipients, subject: `DevPulse AI | ${today} ${weekday}`, html: htmlBody, attachments });
     console.log('  ✓ 邮件发送成功');
-    pushDailyReport(today, weekday, digestItems, repos, summaries);
+    if (!testMode) pushDailyReport(today, weekday, digestItems, repos, summaries);
     return true;
   } catch (e) {
     console.log(`  ✗ 邮件发送失败: ${e.message}`);

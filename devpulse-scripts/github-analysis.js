@@ -55,14 +55,23 @@ async function analyzeBatch(repos) {
 
   const userMsg = `${repos.length}个项目:\n${JSON.stringify(userItems)}`;
 
-  try {
-    const result = await kimiChat(system, userMsg);
-    const parsed = JSON.parse(result);
-    return parsed.items || [];
-  } catch (e) {
-    console.log(`    ⚠ 分析失败: ${e.message}`);
-    return [];
+  const MAX_RETRIES = 3;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const result = await kimiChat(system, userMsg);
+      const parsed = JSON.parse(result);
+      if (parsed.items && parsed.items.length > 0) {
+        return parsed.items;
+      }
+      console.log(`    ⚠ 第 ${attempt}/${MAX_RETRIES} 次返回空结果，重试中...`);
+    } catch (e) {
+      console.log(`    ⚠ 第 ${attempt}/${MAX_RETRIES} 次失败: ${e.message}`);
+    }
+    if (attempt < MAX_RETRIES) {
+      await new Promise(r => setTimeout(r, 5000));
+    }
   }
+  throw new Error(`GitHub 分析连续 ${MAX_RETRIES} 次失败，本批 ${repos.length} 个项目未处理`);
 }
 
 async function main() {
@@ -82,7 +91,7 @@ async function main() {
   const repos = parseRepos(md);
   console.log(`  解析到 ${repos.length} 个项目\n`);
 
-  const BATCH = 10;
+  const BATCH = 5;
   const CONCURRENCY = 1;
   const analysis = {};
 

@@ -27,7 +27,7 @@ const providers = [
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
     model: 'glm-5.1',
     defaultMaxTokens: 8192,
-    timeout: 90000,
+    timeout: 120000,
   },
   {
     name: 'Kimi',

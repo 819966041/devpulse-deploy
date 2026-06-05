@@ -33,3 +33,18 @@ doc/
 
 # Claude 项目记忆文件
 .claude/projects/
+
+# CodeGraph 索引
+.codegraph/
+
+# Playwright MCP
+.playwright-mcp/
+
+# Superpowers
+.superpowers/
+
+# TypeScript 增量编译
+*.tsbuildinfo
+
+# 截图
+*.png
